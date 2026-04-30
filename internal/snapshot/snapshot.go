@@ -58,3 +58,14 @@ func (s *Snapshot) ResourceNames(rt ResourceType) map[string]struct{} {
 	}
 	return names
 }
+
+// GetResource returns the Resource with the given name for the specified type.
+// The second return value is false if no matching resource is found.
+func (s *Snapshot) GetResource(rt ResourceType, name string) (Resource, bool) {
+	for _, r := range s.Resources[rt] {
+		if r.Name == name {
+			return r, true
+		}
+	}
+	return Resource{}, false
+}
