@@ -1,115 +1,137 @@
+// Package differ compares two xDS config snapshots and produces structured diff results.
 package differ
 
 import (
-	"fmt"
+	"encoding/json"
 	"sort"
 
-	"github.com/envoy-diff/internal/snapshot"
+	"github.com/example/envoy-diff/internal/snapshot"
 )
 
-// ResourceDiff represents a diff entry for a single xDS resource.
-type ResourceDiff struct {
-	Type   string
-	Name   string
-	Status DiffStatus
-	Left   string
-	Right  string
-}
-
-// DiffStatus indicates whether a resource was added, removed, or modified.
-type DiffStatus string
+// Status represents the diff status of a resource.
+type Status string
 
 const (
-	StatusAdded    DiffStatus = "added"
-	StatusRemoved  DiffStatus = "removed"
-	StatusModified DiffStatus = "modified"
-	StatusUnchanged DiffStatus = "unchanged"
+	StatusAdded     Status = "added"
+	StatusRemoved   Status = "removed"
+	StatusModified  Status = "modified"
+	StatusUnchanged Status = "unchanged"
 )
 
-// Result holds the full diff between two snapshots.
+// Result holds the diff result for a single xDS resource.
 type Result struct {
-	Diffs []ResourceDiff
+	// Type is the xDS resource type (e.g. "Cluster", "Listener").
+	Type string
+	// Name is the resource name.
+	Name string
+	// Status is the diff status.
+	Status Status
+	// BaselineJSON is the JSON representation from the baseline snapshot (may be empty).
+	BaselineJSON string
+	// CandidateJSON is the JSON representation from the candidate snapshot (may be empty).
+	CandidateJSON string
+	// Tags holds arbitrary metadata attached by downstream stages.
+	Tags map[string]string
+	// Annotations holds human-readable notes attached by downstream stages.
+	Annotations []string
+	// Score is an optional numeric weight assigned by the scorer.
+	Score float64
 }
 
-// HasChanges returns true if there are any non-unchanged diffs.
-func (r *Result) HasChanges() bool {
-	for _, d := range r.Diffs {
-		if d.Status != StatusUnchanged {
-			return true
-		}
-	}
-	return false
-}
+// Compare computes the diff between a baseline and candidate snapshot.
+// It returns one Result per resource, across all resource types present in either snapshot.
+func Compare(baseline, candidate *snapshot.Snapshot) []Result {
+	var results []Result
 
-// Compare computes the diff between two snapshots.
-func Compare(left, right *snapshot.Snapshot) (*Result, error) {
-	if left == nil || right == nil {
-		return nil, fmt.Errorf("both snapshots must be non-nil")
-	}
+	types := unionTypes(baseline, candidate)
+	sort.Strings(types)
 
-	result := &Result{}
+	for _, rtype := range types {
+		baseNames := baseline.ResourceNames(rtype)
+		candNames := candidate.ResourceNames(rtype)
 
-	allTypes := unionTypes(left.ResourceTypes(), right.ResourceTypes())
-
-	for _, rType := range allTypes {
-		leftResources := left.Resources(rType)
-		rightResources := right.Resources(rType)
-
-		allNames := unionNames(keys(leftResources), keys(rightResources))
+		allNames := unionNames(baseNames, candNames)
+		sort.Strings(allNames)
 
 		for _, name := range allNames {
-			lVal, lOk := leftResources[name]
-			rVal, rOk := rightResources[name]
+			baseVal, inBase := baseline.Get(rtype, name)
+			candVal, inCand := candidate.Get(rtype, name)
 
-			var status DiffStatus
+			var status Status
 			switch {
-			case lOk && !rOk:
+			case inBase && !inCand:
 				status = StatusRemoved
-			case !lOk && rOk:
+			case !inBase && inCand:
 				status = StatusAdded
-			case lVal == rVal:
-				status = StatusUnchanged
 			default:
-				status = StatusModified
+				if jsonEqual(baseVal, candVal) {
+					status = StatusUnchanged
+				} else {
+					status = StatusModified
+				}
 			}
 
-			result.Diffs = append(result.Diffs, ResourceDiff{
-				Type:   rType,
-				Name:   name,
-				Status: status,
-				Left:   lVal,
-				Right:  rVal,
+			results = append(results, Result{
+				Type:          rtype,
+				Name:          name,
+				Status:        status,
+				BaselineJSON:  marshalOrEmpty(baseVal),
+				CandidateJSON: marshalOrEmpty(candVal),
+				Tags:          make(map[string]string),
 			})
 		}
 	}
 
-	return result, nil
+	return results
 }
 
-func unionTypes(a, b []string) []string {
-	return unionNames(a, b)
+// unionTypes returns all resource type keys present in either snapshot.
+func unionTypes(a, b *snapshot.Snapshot) []string {
+	return keys(union(a.Types(), b.Types()))
 }
 
+// unionNames returns all names present in either slice.
 func unionNames(a, b []string) []string {
-	seen := make(map[string]struct{})
+	return keys(union(a, b))
+}
+
+func union(a, b []string) map[string]struct{} {
+	m := make(map[string]struct{}, len(a)+len(b))
 	for _, v := range a {
-		seen[v] = struct{}{}
+		m[v] = struct{}{}
 	}
 	for _, v := range b {
-		seen[v] = struct{}{}
+		m[v] = struct{}{}
 	}
-	result := make([]string, 0, len(seen))
-	for k := range seen {
-		result = append(result, k)
-	}
-	sort.Strings(result)
-	return result
+	return m
 }
 
-func keys(m map[string]string) []string {
-	ks := make([]string, 0, len(m))
+func keys(m map[string]struct{}) []string {
+	out := make([]string, 0, len(m))
 	for k := range m {
-		ks = append(ks, k)
+		out = append(out, k)
 	}
-	return ks
+	return out
+}
+
+// jsonEqual reports whether two values produce identical JSON representations.
+func jsonEqual(a, b interface{}) bool {
+	aj, err1 := json.Marshal(a)
+	bj, err2 := json.Marshal(b)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return string(aj) == string(bj)
+}
+
+// marshalOrEmpty marshals v to a JSON string, returning empty string on error or nil.
+func marshalOrEmpty(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
