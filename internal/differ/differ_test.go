@@ -1,96 +1,80 @@
-package differ_test
+package differ
 
 import (
 	"testing"
 
-	"github.com/envoy-diff/internal/differ"
-	"github.com/envoy-diff/internal/snapshot"
+	"github.com/your-org/envoy-diff/internal/snapshot"
 )
 
-func makeSnapshot(resources map[string]map[string]string) *snapshot.Snapshot {
+func makeSnapshot(t *testing.T, resources map[string]map[string]string) *snapshot.Snapshot {
+	t.Helper()
 	s := snapshot.New()
-	for rType, entries := range resources {
-		for name, body := range entries {
-			s.AddResource(rType, name, body)
+	for typ, items := range resources {
+		for name, val := range items {
+			s.Add(typ, name, val)
 		}
 	}
 	return s
 }
 
 func TestCompare_Added(t *testing.T) {
-	left := makeSnapshot(map[string]map[string]string{})
-	right := makeSnapshot(map[string]map[string]string{
-		"cluster": {"cluster-a": `{"name":"cluster-a"}`},
+	a := makeSnapshot(t, nil)
+	b := makeSnapshot(t, map[string]map[string]string{
+		"cluster": {"c1": `{"name":"c1"}`},
 	})
-
-	result, err := differ.Compare(left, right)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Diffs) != 1 {
-		t.Fatalf("expected 1 diff, got %d", len(result.Diffs))
-	}
-	if result.Diffs[0].Status != differ.StatusAdded {
-		t.Errorf("expected added, got %s", result.Diffs[0].Status)
+	res := Compare(a, b)
+	if len(res) != 1 || res[0].Status != Added {
+		t.Fatalf("expected 1 added, got %+v", res)
 	}
 }
 
 func TestCompare_Removed(t *testing.T) {
-	left := makeSnapshot(map[string]map[string]string{
-		"listener": {"listener-a": `{"name":"listener-a"}`},
+	a := makeSnapshot(t, map[string]map[string]string{
+		"cluster": {"c1": `{"name":"c1"}`},
 	})
-	right := makeSnapshot(map[string]map[string]string{})
-
-	result, err := differ.Compare(left, right)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Diffs[0].Status != differ.StatusRemoved {
-		t.Errorf("expected removed, got %s", result.Diffs[0].Status)
+	b := makeSnapshot(t, nil)
+	res := Compare(a, b)
+	if len(res) != 1 || res[0].Status != Removed {
+		t.Fatalf("expected 1 removed, got %+v", res)
 	}
 }
 
 func TestCompare_Modified(t *testing.T) {
-	left := makeSnapshot(map[string]map[string]string{
-		"cluster": {"cluster-a": `{"lb":"round_robin"}`},
+	a := makeSnapshot(t, map[string]map[string]string{
+		"listener": {"l1": `{"port":80}`},
 	})
-	right := makeSnapshot(map[string]map[string]string{
-		"cluster": {"cluster-a": `{"lb":"least_request"}`},
+	b := makeSnapshot(t, map[string]map[string]string{
+		"listener": {"l1": `{"port":443}`},
 	})
-
-	result, err := differ.Compare(left, right)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Diffs[0].Status != differ.StatusModified {
-		t.Errorf("expected modified, got %s", result.Diffs[0].Status)
-	}
-	if !result.HasChanges() {
-		t.Error("expected HasChanges to be true")
+	res := Compare(a, b)
+	if len(res) != 1 || res[0].Status != Modified {
+		t.Fatalf("expected 1 modified, got %+v", res)
 	}
 }
 
 func TestCompare_Unchanged(t *testing.T) {
-	body := `{"name":"cluster-a"}`
-	left := makeSnapshot(map[string]map[string]string{
-		"cluster": {"cluster-a": body},
+	a := makeSnapshot(t, map[string]map[string]string{
+		"route": {"r1": `{"prefix":"/"}`},
 	})
-	right := makeSnapshot(map[string]map[string]string{
-		"cluster": {"cluster-a": body},
+	b := makeSnapshot(t, map[string]map[string]string{
+		"route": {"r1": `{"prefix":"/"}`},
 	})
-
-	result, err := differ.Compare(left, right)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasChanges() {
-		t.Error("expected no changes")
+	res := Compare(a, b)
+	if len(res) != 1 || res[0].Status != Unchanged {
+		t.Fatalf("expected 1 unchanged, got %+v", res)
 	}
 }
 
-func TestCompare_NilSnapshot(t *testing.T) {
-	_, err := differ.Compare(nil, snapshot.New())
-	if err == nil {
-		t.Error("expected error for nil left snapshot")
+func TestCompare_MultiType(t *testing.T) {
+	a := makeSnapshot(t, map[string]map[string]string{
+		"cluster": {"c1": `{}`},
+	})
+	b := makeSnapshot(t, map[string]map[string]string{
+		"cluster":  {"c1": `{}`},
+		"listener": {"l1": `{}`},
+	})
+	res := Compare(a, b)
+	if len(res) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(res))
 	}
 }

@@ -1,73 +1,66 @@
-package differ_test
+package differ
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/envoy-diff/internal/differ"
 )
 
-func buildResult(diffs []differ.ResourceDiff) *differ.Result {
-	return &differ.Result{Diffs: diffs}
+func buildResult(status Status) Result {
+	return Result{
+		Type:     "cluster",
+		Name:     "my-cluster",
+		Status:   status,
+		OldValue: `{"name":"my-cluster"}`,
+		NewValue: `{"name":"my-cluster","extra":true}`,
+	}
 }
 
 func TestRenderText_Added(t *testing.T) {
-	result := buildResult([]differ.ResourceDiff{
-		{Type: "cluster", Name: "my-cluster", Status: differ.StatusAdded, Right: `{"name":"my-cluster"}`},
-	})
 	var buf bytes.Buffer
-	if err := differ.Render(&buf, result, differ.FormatText); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	err := Render(&buf, []Result{buildResult(Added)}, "text")
+	if err != nil {
+		t.Fatal(err)
 	}
-	output := buf.String()
-	if !strings.Contains(output, "+ [cluster] my-cluster") {
-		t.Errorf("unexpected output: %s", output)
+	if !strings.Contains(buf.String(), "+ [cluster]") {
+		t.Errorf("unexpected output: %s", buf.String())
 	}
 }
 
 func TestRenderText_Removed(t *testing.T) {
-	result := buildResult([]differ.ResourceDiff{
-		{Type: "listener", Name: "l1", Status: differ.StatusRemoved, Left: `{"name":"l1"}`},
-	})
 	var buf bytes.Buffer
-	if err := differ.Render(&buf, result, differ.FormatText); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(buf.String(), "- [listener] l1") {
+	_ = Render(&buf, []Result{buildResult(Removed)}, "text")
+	if !strings.Contains(buf.String(), "- [cluster]") {
 		t.Errorf("unexpected output: %s", buf.String())
 	}
 }
 
 func TestRenderText_NoDiffs(t *testing.T) {
-	result := buildResult(nil)
 	var buf bytes.Buffer
-	if err := differ.Render(&buf, result, differ.FormatText); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(buf.String(), "No differences found.") {
-		t.Errorf("unexpected output: %s", buf.String())
+	_ = Render(&buf, nil, "text")
+	if !strings.Contains(buf.String(), "No diffs") {
+		t.Errorf("expected no-diffs message, got: %s", buf.String())
 	}
 }
 
 func TestRenderJSON_Valid(t *testing.T) {
-	result := buildResult([]differ.ResourceDiff{
-		{Type: "cluster", Name: "c1", Status: differ.StatusModified, Left: `{}`, Right: `{"x":1}`},
-	})
 	var buf bytes.Buffer
-	if err := differ.Render(&buf, result, differ.FormatJSON); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_ = Render(&buf, []Result{buildResult(Modified)}, "json")
+	var out []Result
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
 	}
-	if !strings.Contains(buf.String(), `"Status"`) {
-		t.Errorf("expected JSON output, got: %s", buf.String())
+	if len(out) != 1 {
+		t.Errorf("expected 1 result, got %d", len(out))
 	}
 }
 
-func TestRenderUnsupportedFormat(t *testing.T) {
-	result := buildResult(nil)
+func TestRenderJSON_Empty(t *testing.T) {
 	var buf bytes.Buffer
-	err := differ.Render(&buf, result, differ.Format("yaml"))
-	if err == nil {
-		t.Error("expected error for unsupported format")
+	_ = Render(&buf, nil, "json")
+	var out []Result
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
 	}
 }

@@ -7,65 +7,44 @@ import (
 	"strings"
 )
 
-// Format controls output style.
-type Format string
-
-const (
-	FormatText Format = "text"
-	FormatJSON Format = "json"
-)
-
-// Render writes the diff result to w in the requested format.
-func Render(w io.Writer, result *Result, format Format) error {
-	switch format {
-	case FormatJSON:
-		return renderJSON(w, result)
-	case FormatText:
-		return renderText(w, result)
+// Render writes diff results to w in the given format ("text" or "json").
+func Render(w io.Writer, results []Result, format string) error {
+	switch strings.ToLower(format) {
+	case "json":
+		return renderJSON(w, results)
 	default:
-		return fmt.Errorf("unsupported format: %s", format)
+		return renderText(w, results)
 	}
 }
 
-func renderJSON(w io.Writer, result *Result) error {
+func renderJSON(w io.Writer, results []Result) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(result.Diffs)
+	return enc.Encode(results)
 }
 
-func renderText(w io.Writer, result *Result) error {
-	if len(result.Diffs) == 0 {
-		_, err := fmt.Fprintln(w, "No differences found.")
-		return err
-	}
-
-	for _, d := range result.Diffs {
-		if d.Status == StatusUnchanged {
-			continue
-		}
-		prefix := statusPrefix(d.Status)
-		_, err := fmt.Fprintf(w, "%s [%s] %s\n", prefix, d.Type, d.Name)
-		if err != nil {
+func renderText(w io.Writer, results []Result) error {
+	for _, r := range results {
+		prefix := statusPrefix(r.Status)
+		line := fmt.Sprintf("%s [%s] %s/%s", prefix, r.Type, r.Name, truncate(r.NewValue, 60))
+		if _, err := fmt.Fprintln(w, line); err != nil {
 			return err
 		}
-		if d.Status == StatusModified {
-			_, err = fmt.Fprintf(w, "  - %s\n  + %s\n",
-				truncate(d.Left, 120), truncate(d.Right, 120))
-			if err != nil {
-				return err
-			}
-		}
+	}
+	if len(results) == 0 {
+		_, err := fmt.Fprintln(w, "No diffs found.")
+		return err
 	}
 	return nil
 }
 
-func statusPrefix(s DiffStatus) string {
+func statusPrefix(s Status) string {
 	switch s {
-	case StatusAdded:
+	case Added:
 		return "+"
-	case StatusRemoved:
+	case Removed:
 		return "-"
-	case StatusModified:
+	case Modified:
 		return "~"
 	default:
 		return " "
@@ -73,9 +52,8 @@ func statusPrefix(s DiffStatus) string {
 }
 
 func truncate(s string, max int) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	if len(s) > max {
-		return s[:max] + "..."
+	if len(s) <= max {
+		return s
 	}
-	return s
+	return s[:max] + "..."
 }
