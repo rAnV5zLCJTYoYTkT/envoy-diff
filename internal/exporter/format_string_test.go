@@ -34,8 +34,18 @@ func TestParseFormat_Invalid(t *testing.T) {
 }
 
 func TestFormat_String(t *testing.T) {
-	if exporter.FormatJSON.String() != "json" {
-		t.Errorf("expected \"json\", got %q", exporter.FormatJSON.String())
+	cases := []struct {
+		format   exporter.Format
+		expected string
+	}{
+		{exporter.FormatJSON, "json"},
+		{exporter.FormatCSV, "csv"},
+		{exporter.FormatText, "text"},
+	}
+	for _, tc := range cases {
+		if got := tc.format.String(); got != tc.expected {
+			t.Errorf("Format.String() = %q, want %q", got, tc.expected)
+		}
 	}
 }
 
