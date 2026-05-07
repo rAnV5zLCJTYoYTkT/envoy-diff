@@ -90,3 +90,22 @@ func TestExport_BadFilePath(t *testing.T) {
 		t.Error("expected error for bad file path")
 	}
 }
+
+func TestExport_EmptyResults(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "empty.json")
+	opts := exporter.Options{Format: exporter.FormatJSON, FilePath: tmp}
+	if err := exporter.Export([]differ.Result{}, opts); err != nil {
+		t.Fatalf("unexpected error for empty results: %v", err)
+	}
+	data, err := os.ReadFile(tmp)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	var got []differ.Result
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("invalid json for empty results: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0 results, got %d", len(got))
+	}
+}
