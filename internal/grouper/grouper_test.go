@@ -92,3 +92,24 @@ func TestApply_SortedKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestApply_ResultsPreserveOrder verifies that results within each group
+// maintain the same relative order as they appeared in the input slice.
+func TestApply_ResultsPreserveOrder(t *testing.T) {
+	results := []differ.DiffResult{
+		{Type: "cluster", Name: "c2", Status: differ.Unchanged},
+		{Type: "cluster", Name: "c1", Status: differ.Modified},
+		{Type: "cluster", Name: "c3", Status: differ.Added},
+	}
+	groups := grouper.Apply(results, grouper.ByType)
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+	got := groups[0].Results
+	expected := []string{"c2", "c1", "c3"}
+	for i, name := range expected {
+		if got[i].Name != name {
+			t.Errorf("position %d: expected name %q, got %q", i, name, got[i].Name)
+		}
+	}
+}
