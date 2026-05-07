@@ -1,6 +1,7 @@
 package validator_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -77,6 +78,23 @@ func TestValidate_EmptyResults(t *testing.T) {
 	rep := validator.Validate(nil, rules)
 	if !rep.IsClean() {
 		t.Errorf("expected clean report for empty results, got: %v", rep.Violations)
+	}
+}
+
+func TestValidate_MakeResultsHelper(t *testing.T) {
+	// Verify that makeResults produces correctly indexed results with the expected type.
+	results := makeResults(differ.Added, differ.Removed, differ.Unchanged)
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	for i, r := range results {
+		if r.Type != "Cluster" {
+			t.Errorf("result[%d]: expected type Cluster, got %s", i, r.Type)
+		}
+		expectedName := fmt.Sprintf("res-%d", i)
+		if r.Name != expectedName {
+			t.Errorf("result[%d]: expected name %s, got %s", i, expectedName, r.Name)
+		}
 	}
 }
 
