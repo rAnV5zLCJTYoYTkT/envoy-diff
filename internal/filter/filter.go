@@ -49,6 +49,12 @@ func Apply(results []Result, opts Options) []Result {
 	return out
 }
 
+// IsEmpty reports whether the options have no active filter criteria,
+// meaning Apply would return all results unchanged.
+func (o Options) IsEmpty() bool {
+	return len(o.Types) == 0 && len(o.StatusInclude) == 0 && o.NameContains == ""
+}
+
 func toSet(items []string) map[string]bool {
 	if len(items) == 0 {
 		return nil
