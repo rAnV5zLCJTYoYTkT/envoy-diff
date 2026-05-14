@@ -67,3 +67,16 @@ func TestApply_Empty(t *testing.T) {
 		t.Errorf("expected empty result, got %d items", len(res))
 	}
 }
+
+func TestApply_ByType_ThenByName(t *testing.T) {
+	// Verify that when two results share the same type, a secondary sort by name
+	// produces a stable, predictable order.
+	res := sorter.ApplyWithOptions(makeResults(),
+		sorter.WithField(sorter.ByType),
+		sorter.WithSecondary(sorter.ByName),
+	)
+	// Both "apple" and "banana" are type=cluster; apple should come first.
+	if res[0].Name != "apple" || res[1].Name != "banana" {
+		t.Errorf("expected cluster entries ordered apple,banana; got %q,%q", res[0].Name, res[1].Name)
+	}
+}
